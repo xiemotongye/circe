@@ -1,0 +1,31 @@
+package(default_visibility = ["//visibility:public"])
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_library")
+load("@build_bazel_rules_apple//apple/internal:apple_universal_binary.bzl", "apple_universal_binary")
+load("@rules_xcodeproj//xcodeproj:defs.bzl", "top_level_target", "xcodeproj")
+
+swift_library(
+    name = "circe_library",
+    srcs = glob(["**/*.swift"]),
+)
+
+swift_binary(
+    name = "_binary",
+    deps = [":circe_library"],
+)
+
+apple_universal_binary(
+    name = "circe_bin",
+    binary = ":_binary",
+    minimum_os_version = "14",
+    platform_type = "macos"
+)
+
+xcodeproj(
+    name = "xcodeproj",
+    project_name = "Circe",
+    tags = ["manual"],
+    top_level_targets = [
+        top_level_target(":circe_bin", target_environments = ["device", "simulator"]),
+    ],
+    bazel_path = "./bazel-wrapper",
+)

@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+import os
+import platform
+import subprocess
+import sys
+import urllib.request
+import configparser
+import ssl
+import fcntl
+import tempfile
+import shutil
+import hashlib
+
+ssl._create_default_https_context = ssl._create_unverified_context
+
+VERSION = "7.1.1"
+
+def read_properties_file(file_path):
+    config_string = '[dummy_section]\n'
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            config_string = '[dummy_section]\n' + f.read()
+    config = configparser.ConfigParser()
+    config.read_string(config_string)
+    return config['dummy_section']
+
+def check_bazel():
+    try:
+        version = subprocess.check_output(['bazel', '--version'], universal_newlines=True)
+        parts = version.split()
+        if len(parts) >= 2:
+            v = parts[1].split('-')[0]
+            print(f"Found Bazel version: {v}", file=sys.stderr)
+            if v == VERSION:
+                return True
+        return False
+    except:
+        return False
+
+def get_sha256(file_path):
+    with open(file_path, 'rb') as f:
+        file_hash = hashlib.sha256(f.read()).hexdigest()
+    return file_hash
+
+def download_bazel(version, os_type, arch):
+    def report_progress(block_num, block_size, total_size):
+        if block_num % 100 == 0:
+            downloaded = block_num * block_size
+            progress = downloaded / total_size * 100
+            print(f"\rDownloaded {downloaded} of {total_size} bytes ({progress:.2f}%)", end="", file=sys.stderr)
+    url = f"https://github.com/bazelbuild/bazel/releases/download/{version}/bazel-{version}-{os_type}-{arch}"
+    bazel_bin = os.path.join(os.path.expanduser('~'), ".bazel-wrapper-bin")
+    local_bazel = os.path.join(bazel_bin, f"bazel-{version}-{os_type}-{arch}")
+    os.makedirs(os.path.dirname(local_bazel), exist_ok=True)  # Create 'bin' directory if it does not exist
+
+    lock_file = os.path.join(bazel_bin, "bazel-wrapper.lock")
+    with open(lock_file, 'w') as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            if not os.path.exists(local_bazel):
+                with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                    urllib.request.urlretrieve(url, temp_file.name, reporthook=report_progress)
+                    shutil.move(temp_file.name, local_bazel)
+            else:
+                print(f"Found existing Bazel binary: {local_bazel}", file=sys.stderr)
+        except IOError:
+            print("Another bazel-wrapper is running, exiting...", file=sys.stderr)
+            sys.exit(1)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+    return local_bazel
+
+def main():
+    os_type = platform.system().lower()
+    arch = platform.machine()
+
+    if not check_bazel():
+        print("Bazel downloading local version...", file=sys.stderr)
+        bazel_cmd = download_bazel(VERSION, os_type, arch)
+    else:
+        bazel_cmd = subprocess.check_output(['which', 'bazel'], universal_newlines=True).strip()
+
+    print(f"Using Bazel command: {bazel_cmd}", file=sys.stderr)
+    with open(bazel_cmd) as f:
+        os.fsync(f.fileno())
+    os.chmod(bazel_cmd, 0o755)
+    try:
+        bazel_server_args = []
+        os.execv(bazel_cmd, ["bazel"] + bazel_server_args + sys.argv[1:])
+    except OSError as e:
+        ps_output = subprocess.check_output(['ps', 'aux', '|', 'grep', bazel_cmd], shell=True).decode()
+        print(f"PS output: {ps_output}", file=sys.stderr)
+        print(f"Bazel cmd: {bazel_cmd} sha256: {get_sha256(bazel_cmd)}", file=sys.stderr)
+        print(f"Failed to execute Bazel command: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
