@@ -10,36 +10,60 @@ class CRCMacho {
     static func convertMacho(_ path: String) throws {
         var binary = try Data(contentsOf: URL(fileURLWithPath: path))
         try replaceVersionCommand(&binary)
+        try binary.write(to: URL(fileURLWithPath: path))
+        try CRCShell.signMacho(URL(fileURLWithPath: path))
     }
     
     static func replaceVersionCommand(_ binary: inout Data) throws {
-        var macCatalystCommand = build_version_command(cmd: UInt32(LC_BUILD_VERSION),
-                                                       cmdsize: 24,
-                                                       platform: UInt32(PLATFORM_IOSSIMULATOR),
-                                                       minos: 0x000b0000,
-                                                       sdk: 0x000e0000,
-                                                       ntools: 0)
-
         try replaceLastCommand(&binary, satisfy: {data, shouldSwap in
             let loadCommand = data.extract(load_command.self,
                                            offset: data.startIndex,
                                            swap: shouldSwap ? swap_load_command:nil)
             return [UInt32(LC_VERSION_MIN_IPHONEOS),
-                    UInt32(LC_VERSION_MIN_MACOSX),
                     UInt32(LC_BUILD_VERSION)]
                 .contains(loadCommand.cmd)
 
-        }, with: {shouldSwap in
-            if shouldSwap {
-                swap_build_version_command(&macCatalystCommand, NX_BigEndian)
+        }, with: {data, shouldSwap, offset in
+            var minos, sdk: UInt32
+            var newLoadCommand : build_version_command
+            let loadCommand = data.extract(load_command.self,
+                                           offset: offset,
+                                           swap: shouldSwap ? swap_load_command:nil)
+            if loadCommand.cmd == UInt32(LC_VERSION_MIN_IPHONEOS) {
+                let oldLoadCommand = data.extract(version_min_command.self,
+                                                  offset: offset,
+                                                  swap: shouldSwap ? swap_version_min_command:nil)
+                minos = oldLoadCommand.version
+                sdk = oldLoadCommand.sdk
+                newLoadCommand = build_version_command(cmd: UInt32(LC_BUILD_VERSION),
+                                                       cmdsize: 24,
+                                                       platform: UInt32(PLATFORM_IOSSIMULATOR),
+                                                       minos: minos,
+                                                       sdk: sdk,
+                                                       ntools: 0)
+            } else {
+                let oldLoadCommand = data.extract(build_version_command.self,
+                                                  offset: offset,
+                                                  swap: shouldSwap ? swap_build_version_command:nil)
+                minos = oldLoadCommand.minos
+                sdk = oldLoadCommand.sdk
+                newLoadCommand = build_version_command(cmd: UInt32(LC_BUILD_VERSION),
+                                                       cmdsize: 24,
+                                                       platform: UInt32(PLATFORM_IOSSIMULATOR),
+                                                       minos: minos,
+                                                       sdk: sdk,
+                                                       ntools: 0)
             }
-            return Data(bytes: &macCatalystCommand, count: MemoryLayout<build_version_command>.size)
-        }, atEnd: true)
+            if shouldSwap {
+                swap_build_version_command(&newLoadCommand, NX_BigEndian)
+            }
+            return Data(bytes: &newLoadCommand, count: MemoryLayout<build_version_command>.size)
+        }, atEnd: false)
     }
 
     static func replaceLastCommand(_ binary: inout Data,
                                    satisfy isTargetCommand: (Data, Bool) -> Bool,
-                                   with getNewCommandData: (Bool) -> Data?,
+                                   with getNewCommandData: (Data, Bool, Int) -> Data?,
                                    atEnd shouldAppend: Bool) throws {
         let headerSize = MemoryLayout<mach_header_64>.size
         var header = binary.extract(mach_header_64.self)
@@ -64,7 +88,7 @@ class CRCMacho {
         }
 
         let oldCommandEnd = oldCommandStart + Int(oldCommandSize)
-        guard let newCommandData = getNewCommandData(shouldSwap) else {
+        guard let newCommandData = getNewCommandData(binary, shouldSwap, oldCommandStart) else {
             return
         }
         let newCommandSize = UInt32(newCommandData.count)
@@ -127,6 +151,4 @@ class CRCMacho {
         }
         return offset
     }
-
-
 }

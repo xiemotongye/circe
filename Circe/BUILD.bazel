@@ -16,7 +16,7 @@ swift_binary(
 apple_universal_binary(
     name = "circe_bin",
     binary = ":_binary",
-    minimum_os_version = "14",
+    minimum_os_version = "12",
     platform_type = "macos"
 )
 
