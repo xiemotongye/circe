@@ -19,9 +19,6 @@ class CRCIpa {
                 let appMachO = appFile.split(separator: ".")[0]
                 let appPath = path + "/Payload/" + appFile
                 
-                // convert main Mach-O
-                try CRCMacho.convertMacho(appPath + "/" + appMachO)
-                
                 // convert dylibs & frameworks
                 let frameworkPath = appPath + "/Frameworks"
                 contents = try fileManager.contentsOfDirectory(atPath: frameworkPath)
@@ -42,6 +39,9 @@ class CRCIpa {
                     let appexMachO = appex.split(separator: ".")[0]
                     try CRCMacho.convertMacho(pluginPath + "/" + appex + "/" + appexMachO)
                 }
+                
+                // convert main Mach-O
+                try CRCMacho.convertMacho(appPath + "/" + appMachO)
             }
         }
     }

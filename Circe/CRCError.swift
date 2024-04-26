@@ -10,7 +10,7 @@ import Foundation
 enum CRCError: Error {
     case appCorrupted
     case appNotfound
-    case appCannotDecide
+    case failedToStripBinary
 }
 
 extension CRCError: LocalizedError {
@@ -20,8 +20,8 @@ extension CRCError: LocalizedError {
             return NSLocalizedString("error.appCorrupted", comment: "")
         case .appNotfound:
             return NSLocalizedString("error.appNotfound", comment: "")
-        case .appCannotDecide:
-            return NSLocalizedString("error.appCannotDecide", comment: "")
+        case .failedToStripBinary:
+            return NSLocalizedString("error.failedToStripBinary", comment: "")
         }
     }
 }
