@@ -8,18 +8,41 @@
 import Foundation
 
 class CRCIpa {
-    static func blackMagic(_ path: String) throws  {
+    static func convertIpa(_ path: String) throws  {
         let fileManager = FileManager.default
-        let contents = try fileManager.contentsOfDirectory(atPath: path + "/Payload")
+        var contents = try fileManager.contentsOfDirectory(atPath: path + "/Payload")
         let appFiles = contents.filter { $0.hasSuffix(".app") }
         if appFiles.count == 0 {
             throw CRCError.appNotfound
-        } else if appFiles.count > 1 {
-            throw CRCError.appCannotDecide
         } else {
-            let appPath = appFiles[0]
-            let appName = appPath.split(separator: ".")[0]
-            try CRCMacho.convertMacho(path + "/Payload/" + appName + ".app/" + appName)
+            for appFile in appFiles {
+                let appMachO = appFile.split(separator: ".")[0]
+                let appPath = path + "/Payload/" + appFile
+                
+                // convert main Mach-O
+                try CRCMacho.convertMacho(appPath + "/" + appMachO)
+                
+                // convert dylibs & frameworks
+                let frameworkPath = appPath + "/Frameworks"
+                contents = try fileManager.contentsOfDirectory(atPath: frameworkPath)
+                let dylibs = contents.filter { $0.hasSuffix(".dylib") }
+                for dylib in dylibs {
+                    try CRCMacho.convertMacho(frameworkPath + "/" + dylib)
+                }
+                let frameworks = contents.filter { $0.hasSuffix(".framework") }
+                for framework in frameworks {
+                    let frameworkMachO = framework.split(separator: ".")[0]
+                    try CRCMacho.convertMacho(frameworkPath + "/" + framework + "/" + frameworkMachO)
+                }
+                // convert plugins
+                let pluginPath = appPath + "/PlugIns"
+                contents = try fileManager.contentsOfDirectory(atPath: pluginPath)
+                let appexs = contents.filter { $0.hasSuffix(".appex") }
+                for appex in appexs {
+                    let appexMachO = appex.split(separator: ".")[0]
+                    try CRCMacho.convertMacho(pluginPath + "/" + appex + "/" + appexMachO)
+                }
+            }
         }
     }
 }

@@ -11,6 +11,6 @@ import Foundation
 //    fatalError("Please add a path to command!")
 //}
 
-//let binaryPath = CommandLine.arguments[1]
+//let outPath = CommandLine.arguments[1]
 let outPath = "/Users/huangyimin/Downloads/bili-universal"
-try CRCIpa.blackMagic(outPath)
+try CRCIpa.convertIpa(outPath)
