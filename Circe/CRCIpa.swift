@@ -21,23 +21,27 @@ class CRCIpa {
                 
                 // convert dylibs & frameworks
                 let frameworkPath = appPath + "/Frameworks"
-                contents = try fileManager.contentsOfDirectory(atPath: frameworkPath)
-                let dylibs = contents.filter { $0.hasSuffix(".dylib") }
-                for dylib in dylibs {
-                    try CRCMacho.convertMacho(frameworkPath + "/" + dylib)
-                }
-                let frameworks = contents.filter { $0.hasSuffix(".framework") }
-                for framework in frameworks {
-                    let frameworkMachO = framework.split(separator: ".")[0]
-                    try CRCMacho.convertMacho(frameworkPath + "/" + framework + "/" + frameworkMachO)
+                if fileManager.fileExists(atPath: frameworkPath) {
+                    contents = try fileManager.contentsOfDirectory(atPath: frameworkPath)
+                    let dylibs = contents.filter { $0.hasSuffix(".dylib") }
+                    for dylib in dylibs {
+                        try CRCMacho.convertMacho(frameworkPath + "/" + dylib)
+                    }
+                    let frameworks = contents.filter { $0.hasSuffix(".framework") }
+                    for framework in frameworks {
+                        let frameworkMachO = framework.split(separator: ".")[0]
+                        try CRCMacho.convertMacho(frameworkPath + "/" + framework + "/" + frameworkMachO)
+                    }
                 }
                 // convert plugins
                 let pluginPath = appPath + "/PlugIns"
-                contents = try fileManager.contentsOfDirectory(atPath: pluginPath)
-                let appexs = contents.filter { $0.hasSuffix(".appex") }
-                for appex in appexs {
-                    let appexMachO = appex.split(separator: ".")[0]
-                    try CRCMacho.convertMacho(pluginPath + "/" + appex + "/" + appexMachO)
+                if fileManager.fileExists(atPath: pluginPath) {
+                    contents = try fileManager.contentsOfDirectory(atPath: pluginPath)
+                    let appexs = contents.filter { $0.hasSuffix(".appex") }
+                    for appex in appexs {
+                        let appexMachO = appex.split(separator: ".")[0]
+                        try CRCMacho.convertMacho(pluginPath + "/" + appex + "/" + appexMachO)
+                    }
                 }
                 
                 // convert main Mach-O

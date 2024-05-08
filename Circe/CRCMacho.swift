@@ -18,37 +18,37 @@ class CRCMacho {
     }
     
     static func stripBinary(_ binary: inout Data) throws {
-            var header = binary.extract(fat_header.self)
-            var offset = MemoryLayout.size(ofValue: header)
-            let shouldSwap = header.magic == FAT_CIGAM
+        var header = binary.extract(fat_header.self)
+        var offset = MemoryLayout.size(ofValue: header)
+        let shouldSwap = header.magic == FAT_CIGAM
 
-            if header.magic == FAT_MAGIC || header.magic == FAT_CIGAM {
-                // Make sure the endianness is correct
-                if shouldSwap {
-                    swap_fat_header(&header, NXHostByteOrder())
-                }
-
-                for _ in 0..<header.nfat_arch {
-                    var arch = binary.extract(fat_arch.self, offset: offset)
-                    if shouldSwap {
-                        swap_fat_arch(&arch, 1, NXHostByteOrder())
-                    }
-
-                    if arch.cputype == CPU_TYPE_ARM64 {
-                        print("Found ARM64 arch in fat binary")
-
-                        binary = binary
-                            .subdata(in: Int(arch.offset)..<Int(arch.offset+arch.size))
-
-                        return
-                    }
-
-                    offset += Int(MemoryLayout.size(ofValue: arch))
-                }
-
-                throw CRCError.failedToStripBinary
+        if header.magic == FAT_MAGIC || header.magic == FAT_CIGAM {
+            // Make sure the endianness is correct
+            if shouldSwap {
+                swap_fat_header(&header, NXHostByteOrder())
             }
+
+            for _ in 0..<header.nfat_arch {
+                var arch = binary.extract(fat_arch.self, offset: offset)
+                if shouldSwap {
+                    swap_fat_arch(&arch, 1, NXHostByteOrder())
+                }
+
+                if arch.cputype == CPU_TYPE_ARM64 {
+                    print("Found ARM64 arch in fat binary")
+
+                    binary = binary
+                        .subdata(in: Int(arch.offset)..<Int(arch.offset+arch.size))
+
+                    return
+                }
+
+                offset += Int(MemoryLayout.size(ofValue: arch))
+            }
+
+            throw CRCError.failedToStripBinary
         }
+    }
     
     static func replaceVersionCommand(_ binary: inout Data) throws {
         try replaceLastCommand(&binary, satisfy: {data, shouldSwap in
