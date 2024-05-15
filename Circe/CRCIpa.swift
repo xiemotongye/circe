@@ -10,14 +10,20 @@ import Foundation
 class CRCIpa {
     static func convertIpa(_ path: String) throws  {
         let fileManager = FileManager.default
-        var contents = try fileManager.contentsOfDirectory(atPath: path + "/Payload")
+        var payloadPath: String
+        if fileManager.fileExists(atPath: path + "/Payload") {
+            payloadPath = path + "/Payload"
+        } else {
+            payloadPath = path
+        }
+        var contents = try fileManager.contentsOfDirectory(atPath: payloadPath)
         let appFiles = contents.filter { $0.hasSuffix(".app") }
         if appFiles.count == 0 {
             throw CRCError.appNotfound
         } else {
             for appFile in appFiles {
                 let appMachO = appFile.split(separator: ".")[0]
-                let appPath = path + "/Payload/" + appFile
+                let appPath = payloadPath + "/" + appFile
                 
                 // convert dylibs & frameworks
                 let frameworkPath = appPath + "/Frameworks"
