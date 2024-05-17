@@ -1,13 +1,25 @@
 //
-//  CRCAppInfo.swift
+//  CRCInfoPlist.swift
 //  Circe
 //
 //  Created by huangyimin on 2024/5/15.
 //
 import Foundation
 
-public class CRCAppInfo {
+public class CRCInfoPlist {
     public let url: URL
+    
+    private static let deviceConvertMap = [
+        "iphoneos":     "iphonesimulator",
+        "iPhoneOS":     "iPhoneSimulator",
+        "watchos":      "watchsimulator",
+        "WatchOS":      "WatchSimulator",
+        "appletvos":    "appletvsimulator",
+        "AppleTVOS":    "AppleTVSimulator",
+        "xros":         "xrsimulator",
+        "XROS":         "XRSimulator",
+    ]
+    
     fileprivate var rawStorage: NSMutableDictionary
 
     public init(contentsOf url: URL) {
@@ -25,12 +37,6 @@ public class CRCAppInfo {
         self.rawStorage = rawStorage
     }
 
-    public func retargeted(toURL url: URL) -> CRCAppInfo {
-        guard let copy = rawStorage.mutableCopy() as? NSMutableDictionary
-        else { fatalError("Failed to copy rawStorage") }
-        return CRCAppInfo(url: url, rawStorage: copy)
-    }
-
     /// Write an XML-serialized representation of this info to the given URL
     func write(toURL url: URL) throws {
         try rawStorage.write(to: url)
@@ -40,7 +46,33 @@ public class CRCAppInfo {
     func write() throws {
         try write(toURL: url)
     }
-
+    
+    static func convertInfoPlist(_ path: String) throws {
+        let plistURL = URL(fileURLWithPath: path)
+        var appInfo = CRCInfoPlist(contentsOf:plistURL)
+        for key in deviceConvertMap.keys {
+            // convert value of DTPlatformName
+            if (appInfo.platformName.contains(key)) {
+                appInfo.platformName = deviceConvertMap[key]!
+            }
+            // convert value of DTSDKName
+            if (appInfo.sdkName.contains(key)) {
+                appInfo.sdkName = appInfo.sdkName.replacingOccurrences(of: key, with: deviceConvertMap[key]!)
+            }
+            // convert value of CFBundleSupportedPlatforms
+            var newPlatforms : [String] = []
+            for platform in appInfo.bundleSupportedPlatforms {
+                if platform.contains(key) {
+                    newPlatforms.append(deviceConvertMap[key]!)
+                } else {
+                    newPlatforms.append(platform)
+                }
+            }
+            appInfo.bundleSupportedPlatforms = newPlatforms
+        }
+        try appInfo.write()
+    }
+    
     subscript(string index: String) -> String? {
         get {
             rawStorage[index] as? String

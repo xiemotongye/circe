@@ -37,6 +37,11 @@ class CRCIpa {
                     for framework in frameworks {
                         let frameworkMachO = framework.split(separator: ".")[0]
                         try CRCMacho.convertMacho(frameworkPath + "/" + framework + "/" + frameworkMachO)
+                        
+                        let InfoPlistPath = frameworkPath + "/" + framework + "/Info.plist"
+                        if fileManager.fileExists(atPath: InfoPlistPath) {
+                            try CRCInfoPlist.convertInfoPlist(InfoPlistPath)
+                        }
                     }
                 }
                 // convert plugins
@@ -47,11 +52,17 @@ class CRCIpa {
                     for appex in appexs {
                         let appexMachO = appex.split(separator: ".")[0]
                         try CRCMacho.convertMacho(pluginPath + "/" + appex + "/" + appexMachO)
+                        
+                        let InfoPlistPath = pluginPath + "/" + appex + "/Info.plist"
+                        if fileManager.fileExists(atPath: InfoPlistPath) {
+                            try CRCInfoPlist.convertInfoPlist(InfoPlistPath)
+                        }
                     }
                 }
                 
                 // convert main Mach-O
                 try CRCMacho.convertMacho(appPath + "/" + appMachO)
+                try CRCInfoPlist.convertInfoPlist(appPath + "/Info.plist")
             }
         }
     }
