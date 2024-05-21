@@ -49,7 +49,7 @@ public class CRCInfoPlist {
     
     static func convertInfoPlist(_ path: String) throws {
         let plistURL = URL(fileURLWithPath: path)
-        var appInfo = CRCInfoPlist(contentsOf:plistURL)
+        let appInfo = CRCInfoPlist(contentsOf:plistURL)
         for key in deviceConvertMap.keys {
             // convert value of DTPlatformName
             if (appInfo.platformName.contains(key)) {

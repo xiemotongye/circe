@@ -15,6 +15,7 @@ class CRCMacho {
         try FileManager.default.removeItem(at: binaryURL)
         try binary.write(to: binaryURL)
         try CRCShell.signMacho(binaryURL)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: binaryURL.path)
     }
     
     static func stripBinary(_ binary: inout Data) throws {
