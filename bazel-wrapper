@@ -13,7 +13,7 @@ import hashlib
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
-VERSION = "7.1.1"
+VERSION = "8.4.2"
 
 def read_properties_file(file_path):
     config_string = '[dummy_section]\n'
