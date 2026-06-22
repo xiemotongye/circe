@@ -135,3 +135,59 @@ def arm2sim_dynamic_framework_import(name, framework_imports, visibility = None,
         visibility = visibility,
         **kwargs
     )
+
+# --- arm2sim_objc_import ---
+
+def _arm2sim_objc_import_impl(ctx):
+    """Converts all input archives through Circe on simulator, pass-through on device."""
+    cpu = ctx.fragments.apple.single_arch_cpu
+
+    if cpu not in ("sim_arm64", "ios_sim_arm64"):
+        return [DefaultInfo(files = depset(ctx.files.archives))]
+
+    circe = ctx.executable._circe
+    outputs = []
+    for src in ctx.files.archives:
+        out = ctx.actions.declare_file(ctx.label.name + "_sim/" + src.basename)
+        ctx.actions.run(
+            executable = circe,
+            arguments = [src.path, out.path],
+            inputs = [src],
+            outputs = [out],
+            tools = [circe],
+            mnemonic = "Arm2SimArchive",
+            progress_message = "Converting %s to arm64-simulator" % src.short_path,
+        )
+        outputs.append(out)
+    return [DefaultInfo(files = depset(outputs))]
+
+_arm2sim_objc_import_archives = rule(
+    implementation = _arm2sim_objc_import_impl,
+    fragments = ["apple"],
+    attrs = {
+        "archives": attr.label_list(allow_files = [".a"], mandatory = True),
+        "_circe": attr.label(
+            default = "//Circe:_binary",
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
+
+def arm2sim_objc_import(name, archives, visibility = None, **kwargs):
+    """Drop-in replacement for objc_import with arm2sim conversion on simulator.
+
+    Accepts both explicit file paths and glob() expressions for archives.
+    Each .a archive is individually converted through Circe when building
+    for arm64 simulator; device builds pass through unchanged.
+    """
+    _arm2sim_objc_import_archives(
+        name = name + "_arm2sim",
+        archives = archives,
+    )
+    native.objc_import(
+        name = name,
+        archives = [":" + name + "_arm2sim"],
+        visibility = visibility,
+        **kwargs
+    )
