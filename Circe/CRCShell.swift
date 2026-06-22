@@ -9,12 +9,20 @@ import Foundation
 
 class CRCShell: ObservableObject {
     @discardableResult
-    static func run(_ binary: String, _ args: String...) throws -> String {
+    static func run(_ binary: String, _ args: String..., directory: String? = nil) throws -> String {
+        try run(binary, arguments: Array(args), directory: directory)
+    }
+
+    @discardableResult
+    static func run(_ binary: String, arguments: [String], directory: String? = nil) throws -> String {
         let process = Process()
         let pipe = Pipe()
 
         process.executableURL = URL(fileURLWithPath: binary)
-        process.arguments = args
+        process.arguments = arguments
+        if let directory = directory {
+            process.currentDirectoryURL = URL(fileURLWithPath: directory)
+        }
         process.standardOutput = pipe
         process.standardError = pipe
 

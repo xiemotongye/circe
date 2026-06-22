@@ -1,6 +1,0 @@
-config_setting(
-    name = "arm2sim",
-    define_values = {
-        "circe.arm2sim": "1",
-    },
-)

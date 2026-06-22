@@ -1,6 +1,6 @@
 module(
     name = "circe",
-    version = "0.0.3",
+    version = "0.0.4",
 )
 
 bazel_dep(name = "apple_support", version = "1.23.1", repo_name = "build_bazel_apple_support")
