@@ -7,14 +7,24 @@
 import Foundation
 
 class CRCMacho {
-    static func convertMacho(_ path: String) throws {
+    /// Converts a Mach-O binary in place from arm64 iOS to arm64 iOS Simulator.
+    /// - Parameters:
+    ///   - path: Path to the Mach-O file.
+    ///   - sign: When true, re-sign the converted binary with an ad-hoc code
+    ///     signature. Disable when converting transient `.o` members extracted
+    ///     from a static archive — they will be re-archived and signed (if at
+    ///     all) at the final framework binary level, and codesigning each `.o`
+    ///     causes thousands of fork() calls that can exhaust process limits.
+    static func convertMacho(_ path: String, sign: Bool = true) throws {
         let binaryURL = URL(fileURLWithPath: path)
         var binary = try Data(contentsOf: binaryURL)
         try stripBinary(&binary)
         try replaceVersionCommand(&binary)
         try FileManager.default.removeItem(at: binaryURL)
         try binary.write(to: binaryURL)
-        try CRCShell.signMacho(binaryURL)
+        if sign {
+            try CRCShell.signMacho(binaryURL)
+        }
         try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: binaryURL.path)
     }
     

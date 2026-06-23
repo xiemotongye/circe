@@ -46,7 +46,7 @@ class CRCArchive {
 
         for obj in objects {
             let objPath = extractDir + "/" + obj
-            try CRCMacho.convertMacho(objPath)
+            try CRCMacho.convertMacho(objPath, sign: false)
         }
 
         // Step 4: Repackage into output .a
@@ -56,9 +56,37 @@ class CRCArchive {
             at: outputURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
+        // Resolve to an absolute path so subsequent `ar` invocations launched
+        // with `directory: extractDir` find it correctly.
+        let absoluteOutputPath = outputURL.standardizedFileURL.path
+        // Ensure we start with no pre-existing archive (so `ar -q` actually
+        // creates a fresh one).
+        if fileManager.fileExists(atPath: absoluteOutputPath) {
+            try fileManager.removeItem(atPath: absoluteOutputPath)
+        }
 
-        var arArgs = ["rcs", outputPath]
-        arArgs += objects.map { extractDir + "/" + $0 }
-        try CRCShell.run("/usr/bin/ar", arguments: arArgs)
+        // Archives can contain thousands of .o members. Passing every member
+        // path on the command line risks blowing past ARG_MAX (the kernel
+        // raises E2BIG and Foundation surfaces it as an NSException from
+        // NSConcreteTask). Instead, run `ar` from inside the extract dir
+        // (relative names) and batch the inputs.
+        let batchSize = 256
+        var first = true
+        var index = 0
+        while index < objects.count {
+            let end = min(index + batchSize, objects.count)
+            let batch = Array(objects[index..<end])
+            // First batch: `rcS` creates the archive without an index.
+            // Subsequent batches: `qS` quick-append, also without an index.
+            // After all batches: `s` to regenerate the symbol table.
+            let op = first ? "rcS" : "qS"
+            var args = [op, absoluteOutputPath]
+            args += batch
+            try CRCShell.run("/usr/bin/ar", arguments: args, directory: extractDir)
+            first = false
+            index = end
+        }
+        // Regenerate the archive symbol table at the end (equivalent to `ranlib`).
+        try CRCShell.run("/usr/bin/ar", arguments: ["s", absoluteOutputPath])
     }
 }
