@@ -2,13 +2,19 @@
 
 load("@build_bazel_rules_apple//apple:apple.bzl", "apple_dynamic_framework_import", "apple_static_framework_import")
 
+def _is_arm64_simulator(ctx):
+    """True iff the current configuration targets arm64 iOS Simulator."""
+    apple_fragment = ctx.fragments.apple
+    platform = apple_fragment.single_arch_platform
+    cpu = apple_fragment.single_arch_cpu
+    return cpu == "arm64" and not platform.is_device
+
 # --- arm2sim_archive ---
 
 def _arm2sim_archive_impl(ctx):
     input_archive = ctx.file.archive
-    cpu = ctx.fragments.apple.single_arch_cpu
 
-    if cpu in ("sim_arm64", "ios_sim_arm64"):
+    if _is_arm64_simulator(ctx):
         output = ctx.actions.declare_file(ctx.label.name + ".a")
         circe = ctx.executable._circe
         ctx.actions.run(
@@ -45,19 +51,23 @@ arm2sim_archive = rule(
 # --- arm2sim_framework (internal) ---
 
 def _is_framework_binary(f):
-    """Determine if a file is the main binary inside a .framework directory."""
+    """Determine if a file is the main binary inside a .framework directory.
+
+    The main binary is `<Foo>.framework/<Foo>` where the file basename
+    matches the framework name (without `.framework`). This avoids treating
+    sibling root files like `JOB_ID` or `COMMIT_SHA` as binaries.
+    """
     parts = f.path.split("/")
     for i, part in enumerate(parts):
         if part.endswith(".framework"):
+            fw_name = part[:-len(".framework")]
             remaining = parts[i + 1:]
-            if len(remaining) == 1 and "." not in remaining[0]:
+            if len(remaining) == 1 and remaining[0] == fw_name:
                 return True
     return False
 
 def _arm2sim_framework_impl(ctx):
-    cpu = ctx.fragments.apple.single_arch_cpu
-
-    if cpu not in ("sim_arm64", "ios_sim_arm64"):
+    if not _is_arm64_simulator(ctx):
         return [DefaultInfo(files = depset(ctx.files.framework_imports))]
 
     circe = ctx.executable._circe
@@ -140,9 +150,7 @@ def arm2sim_dynamic_framework_import(name, framework_imports, visibility = None,
 
 def _arm2sim_objc_import_impl(ctx):
     """Converts all input archives through Circe on simulator, pass-through on device."""
-    cpu = ctx.fragments.apple.single_arch_cpu
-
-    if cpu not in ("sim_arm64", "ios_sim_arm64"):
+    if not _is_arm64_simulator(ctx):
         return [DefaultInfo(files = depset(ctx.files.archives))]
 
     circe = ctx.executable._circe
