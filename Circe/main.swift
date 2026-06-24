@@ -14,27 +14,48 @@ guard CommandLine.arguments.count > 1 else {
 let path = CommandLine.arguments[1]
 
 func isArArchive(_ path: String) -> Bool {
-    // Detect static archives by content. Handles both thin archives (magic "!<arch>\n"
-    // at the very start) and fat archives (FAT_MAGIC / FAT_CIGAM header that wraps
-    // per-arch `ar` slices). Returns true if the inner content is `ar` format.
+    // Detect static archives by content. Handles both:
+    // - Thin archives: magic "!<arch>\n" at offset 0
+    // - Fat archives: FAT_MAGIC header wrapping per-arch `ar` slices
+    //   (the ar magic may be far beyond the first 4KB due to large slices)
     guard let fh = FileHandle(forReadingAtPath: path) else { return false }
     defer { try? fh.close() }
-    guard let data = try? fh.read(upToCount: 4096) else { return false }
+    guard let header = try? fh.read(upToCount: 8) else { return false }
+
     let arMagic: [UInt8] = [0x21, 0x3C, 0x61, 0x72, 0x63, 0x68, 0x3E, 0x0A] // "!<arch>\n"
-    if data.starts(with: arMagic) {
+    if Array(header) == arMagic {
         return true
     }
-    // Fat header magic
-    let fatMagic: [[UInt8]] = [[0xCA, 0xFE, 0xBA, 0xBE], [0xBE, 0xBA, 0xFE, 0xCA]]
-    guard data.count >= 4 else { return false }
-    let head = Array(data.prefix(4))
-    guard fatMagic.contains(head) else { return false }
-    // Scan for "!<arch>\n" anywhere in the first 4KB (fat wrapper places slices at offsets).
-    if data.count < arMagic.count { return false }
-    for i in 0...(data.count - arMagic.count) {
-        if Array(data[i..<(i + arMagic.count)]) == arMagic {
+
+    // Check for fat binary wrapping ar slices
+    guard header.count >= 4 else { return false }
+    let magic = header.withUnsafeBytes { $0.load(as: UInt32.self) }
+    let isFat = (magic == 0xCAFEBABE || magic == 0xBEBAFECA)
+    guard isFat else { return false }
+
+    // Read fat_header to find first arm64 slice offset, then check if that
+    // slice starts with ar magic.
+    try? fh.seek(toOffset: 0)
+    guard let fatData = try? fh.read(upToCount: 4096) else { return false }
+    guard fatData.count >= 8 else { return false }
+
+    let shouldSwap = (magic == 0xBEBAFECA)
+    var nfatArch = fatData.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt32.self) }
+    if shouldSwap { nfatArch = nfatArch.byteSwapped }
+
+    var offset = 8 // after fat_header
+    for _ in 0..<min(nfatArch, 8) {
+        guard offset + 20 <= fatData.count else { break }
+        // fat_arch: cputype(4) cpusubtype(4) offset(4) size(4) align(4)
+        var sliceOffset = fatData.withUnsafeBytes { $0.load(fromByteOffset: offset + 8, as: UInt32.self) }
+        if shouldSwap { sliceOffset = sliceOffset.byteSwapped }
+
+        // Seek to slice and check for ar magic
+        try? fh.seek(toOffset: UInt64(sliceOffset))
+        if let sliceHeader = try? fh.read(upToCount: 8), Array(sliceHeader) == arMagic {
             return true
         }
+        offset += 20
     }
     return false
 }
