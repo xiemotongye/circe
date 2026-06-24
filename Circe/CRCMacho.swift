@@ -10,11 +10,7 @@ class CRCMacho {
     /// Converts a Mach-O binary in place from arm64 iOS to arm64 iOS Simulator.
     /// - Parameters:
     ///   - path: Path to the Mach-O file.
-    ///   - sign: When true, re-sign the converted binary with an ad-hoc code
-    ///     signature. Disable when converting transient `.o` members extracted
-    ///     from a static archive — they will be re-archived and signed (if at
-    ///     all) at the final framework binary level, and codesigning each `.o`
-    ///     causes thousands of fork() calls that can exhaust process limits.
+    ///   - sign: When true (default), re-sign with ad-hoc signature after conversion.
     static func convertMacho(_ path: String, sign: Bool = true) throws {
         let binaryURL = URL(fileURLWithPath: path)
         var binary = try Data(contentsOf: binaryURL)
@@ -149,21 +145,90 @@ class CRCMacho {
         }
 
         let injectionEnd = movedCommandsEnd - Int(oldCommandSize) + Int(newCommandSize)
-        if injectionEnd > movedCommandsEnd {
-            if let nonZero = binary[movedCommandsEnd ..< injectionEnd].first(where: {$0 != 0}) {
-                print("Non zero value \(nonZero) found after load commands. Injection may overlap data section")
-            }
+        let needsShift = injectionEnd > movedCommandsEnd
+        let extraBytes = needsShift ? (injectionEnd - movedCommandsEnd) : 0
+
+        if needsShift {
+            // New command is larger — insert padding to push section data forward.
+            binary.insert(contentsOf: Data(count: extraBytes), at: movedCommandsEnd)
         } else {
             binary.replaceSubrange(injectionEnd ..< movedCommandsEnd,
                                    with: Data(count: movedCommandsEnd - injectionEnd))
         }
-        binary.replaceSubrange(oldCommandStart..<injectionEnd, with: resultingCommandsData)
+        binary.replaceSubrange(oldCommandStart..<(oldCommandStart + resultingCommandsData.count), with: resultingCommandsData)
 
         // Write new header data
         header.sizeofcmds -= oldCommandSize
         header.sizeofcmds += newCommandSize
         let newHeaderData = Data(bytes: &header, count: headerSize)
         binary.replaceSubrange(0..<headerSize, with: newHeaderData)
+
+        // If we shifted section data, update all file offsets in load commands.
+        if needsShift {
+            var secOffset = headerSize
+            let updatedHeader = binary.extract(mach_header_64.self)
+            var ncmds = updatedHeader.ncmds
+            let lcShouldSwap = (updatedHeader.magic == MH_CIGAM_64)
+            if lcShouldSwap {
+                var h = updatedHeader
+                swap_mach_header_64(&h, NXHostByteOrder())
+                ncmds = h.ncmds
+            }
+            for _ in 0..<ncmds {
+                var lc = binary.extract(load_command.self, offset: secOffset)
+                if lcShouldSwap { swap_load_command(&lc, NXHostByteOrder()) }
+                if lc.cmd == UInt32(LC_SEGMENT_64) {
+                    let segHeaderSize = MemoryLayout<segment_command_64>.size
+                    var seg = binary.extract(segment_command_64.self, offset: secOffset)
+                    if lcShouldSwap { swap_segment_command_64(&seg, NXHostByteOrder()) }
+                    if seg.fileoff > 0 { seg.fileoff += UInt64(extraBytes) }
+                    if lcShouldSwap { swap_segment_command_64(&seg, NX_BigEndian) }
+                    binary.replaceSubrange(secOffset..<(secOffset + segHeaderSize),
+                                           with: Data(bytes: &seg, count: segHeaderSize))
+                    if lcShouldSwap { swap_segment_command_64(&seg, NXHostByteOrder()) }
+                    var secOff2 = secOffset + segHeaderSize
+                    for _ in 0..<seg.nsects {
+                        let secSize = MemoryLayout<section_64>.size
+                        var sec = binary.extract(section_64.self, offset: secOff2)
+                        if lcShouldSwap { swap_section_64(&sec, 1, NXHostByteOrder()) }
+                        if sec.offset > 0 { sec.offset += UInt32(extraBytes) }
+                        if sec.reloff > 0 { sec.reloff += UInt32(extraBytes) }
+                        if lcShouldSwap { swap_section_64(&sec, 1, NX_BigEndian) }
+                        binary.replaceSubrange(secOff2..<(secOff2 + secSize),
+                                               with: Data(bytes: &sec, count: secSize))
+                        secOff2 += secSize
+                    }
+                } else if lc.cmd == UInt32(LC_SYMTAB) {
+                    var symtab = binary.extract(symtab_command.self, offset: secOffset)
+                    if lcShouldSwap { swap_symtab_command(&symtab, NXHostByteOrder()) }
+                    if symtab.symoff > 0 { symtab.symoff += UInt32(extraBytes) }
+                    if symtab.stroff > 0 { symtab.stroff += UInt32(extraBytes) }
+                    if lcShouldSwap { swap_symtab_command(&symtab, NX_BigEndian) }
+                    binary.replaceSubrange(secOffset..<(secOffset + MemoryLayout<symtab_command>.size),
+                                           with: Data(bytes: &symtab, count: MemoryLayout<symtab_command>.size))
+                } else if lc.cmd == UInt32(LC_DYSYMTAB) {
+                    var dysymtab = binary.extract(dysymtab_command.self, offset: secOffset)
+                    if lcShouldSwap { swap_dysymtab_command(&dysymtab, NXHostByteOrder()) }
+                    if dysymtab.tocoff > 0 { dysymtab.tocoff += UInt32(extraBytes) }
+                    if dysymtab.modtaboff > 0 { dysymtab.modtaboff += UInt32(extraBytes) }
+                    if dysymtab.extrefsymoff > 0 { dysymtab.extrefsymoff += UInt32(extraBytes) }
+                    if dysymtab.indirectsymoff > 0 { dysymtab.indirectsymoff += UInt32(extraBytes) }
+                    if dysymtab.extreloff > 0 { dysymtab.extreloff += UInt32(extraBytes) }
+                    if dysymtab.locreloff > 0 { dysymtab.locreloff += UInt32(extraBytes) }
+                    if lcShouldSwap { swap_dysymtab_command(&dysymtab, NX_BigEndian) }
+                    binary.replaceSubrange(secOffset..<(secOffset + MemoryLayout<dysymtab_command>.size),
+                                           with: Data(bytes: &dysymtab, count: MemoryLayout<dysymtab_command>.size))
+                } else if lc.cmd == UInt32(LC_LINKER_OPTIMIZATION_HINT) || lc.cmd == UInt32(LC_DATA_IN_CODE) {
+                    var led = binary.extract(linkedit_data_command.self, offset: secOffset)
+                    if lcShouldSwap { swap_linkedit_data_command(&led, NXHostByteOrder()) }
+                    if led.dataoff > 0 { led.dataoff += UInt32(extraBytes) }
+                    if lcShouldSwap { swap_linkedit_data_command(&led, NX_BigEndian) }
+                    binary.replaceSubrange(secOffset..<(secOffset + MemoryLayout<linkedit_data_command>.size),
+                                           with: Data(bytes: &led, count: MemoryLayout<linkedit_data_command>.size))
+                }
+                secOffset += Int(lc.cmdsize)
+            }
+        }
     }
     
     static func iterateLoadCommands(binary: Data, _ evaluate: (Int, Bool) -> Bool) throws -> Int {
