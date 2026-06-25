@@ -68,12 +68,20 @@ def _is_framework_binary(f):
 
 def _arm2sim_framework_impl(ctx):
     if not _is_arm64_simulator(ctx):
-        return [DefaultInfo(files = depset(ctx.files.framework_imports))]
+        return [DefaultInfo(files = depset([
+            f for f in ctx.files.framework_imports if not f.basename.startswith("._")
+        ]))]
 
     circe = ctx.executable._circe
     outputs = []
 
     for src in ctx.files.framework_imports:
+        # Skip macOS AppleDouble metadata files (`._*`) that get injected into
+        # framework directories by extended-attribute-aware filesystems. These
+        # are not real framework content; if propagated, they masquerade as
+        # `._module.modulemap`, `._Headers/*`, etc. and confuse clang.
+        if src.basename.startswith("._"):
+            continue
         # Preserve directory structure relative to the .framework
         parts = src.short_path.split("/")
         fw_index = -1
