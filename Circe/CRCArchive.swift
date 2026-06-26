@@ -34,15 +34,21 @@ class CRCArchive {
             try fileManager.copyItem(atPath: inputPath, toPath: thinPath)
         }
 
-        // Step 2: Extract .o files from the archive
+        // Step 2: Extract .o files from the archive.
+        //
+        // `ar` archives can contain duplicate member names (a single library
+        // built for multiple bit depths often ships e.g. two `cdef_tmpl.c.o`
+        // entries — one per template instantiation). A plain `ar x` silently
+        // overwrites the earlier file with the later one, losing roughly half
+        // of the templated `.o`s and the symbols they define.
+        //
+        // macOS `ar` (BSD) does not support `-N <occurrence>` to disambiguate,
+        // so we parse the archive format directly and write each member to a
+        // unique filename of our choosing.
         let extractDir = tempDir + "/objects"
         try fileManager.createDirectory(atPath: extractDir, withIntermediateDirectories: true)
 
-        try CRCShell.run("/usr/bin/ar", arguments: ["x", thinPath], directory: extractDir)
-
-        // Step 3: Convert each .o file
-        let objects = try fileManager.contentsOfDirectory(atPath: extractDir)
-            .filter { $0.hasSuffix(".o") }
+        let objects = try extractArchiveMembers(archivePath: thinPath, into: extractDir)
 
         for obj in objects {
             let objPath = extractDir + "/" + obj
@@ -88,5 +94,92 @@ class CRCArchive {
         }
         // Regenerate the archive symbol table at the end (equivalent to `ranlib`).
         try CRCShell.run("/usr/bin/ar", arguments: ["s", absoluteOutputPath])
+    }
+
+    /// Parses a BSD/macOS `ar` archive and writes each `.o` member to a unique
+    /// file in `outputDir`. Returns the list of written filenames in archive
+    /// order. Non-`.o` members (symbol table, ranlib index) are skipped.
+    ///
+    /// Members whose name collides with an earlier member are renamed with a
+    /// `_dup<occurrence>_` prefix so `ar x` can later repackage them without
+    /// clobbering. Without this, ~half of the `.o` files in templated archives
+    /// (e.g. dav1d's per-bit-depth `*_tmpl.c.o`) silently disappear.
+    private static func extractArchiveMembers(archivePath: String, into outputDir: String) throws -> [String] {
+        let data = try Data(contentsOf: URL(fileURLWithPath: archivePath))
+        let magic = "!<arch>\n"
+        guard data.count >= magic.count,
+              String(data: data.prefix(magic.count), encoding: .ascii) == magic else {
+            throw NSError(domain: "CRCArchive", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Not an ar archive: \(archivePath)"])
+        }
+
+        var offset = magic.count
+        var seenCounts: [String: Int] = [:]
+        var nameTotals: [String: Int] = [:]
+        var rawMembers: [(name: String, payload: Data)] = []
+
+        while offset + 60 <= data.count {
+            // Member header: 16 bytes name, 12 mtime, 6 uid, 6 gid, 8 mode,
+            // 10 size, 2 magic ("`\n").
+            let nameField = String(data: data[offset..<offset+16], encoding: .ascii) ?? ""
+            let sizeField = String(data: data[offset+48..<offset+58], encoding: .ascii) ?? ""
+            guard let size = Int(sizeField.trimmingCharacters(in: .whitespaces)) else { break }
+            let headerEnd = offset + 60
+
+            var name = nameField.trimmingCharacters(in: .whitespaces)
+            var dataStart = headerEnd
+            var dataLen = size
+
+            // BSD-style long name: header name reads "#1/<len>" and the real
+            // name occupies the first <len> bytes of the data section.
+            if name.hasPrefix("#1/"), let nameLen = Int(name.dropFirst(3)) {
+                let nameBytes = data[headerEnd..<(headerEnd + nameLen)]
+                if let extracted = String(data: nameBytes, encoding: .utf8) ?? String(data: nameBytes, encoding: .ascii) {
+                    name = extracted.trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
+                }
+                dataStart = headerEnd + nameLen
+                dataLen = size - nameLen
+            }
+
+            // Strip trailing slash on SystemV-style entries ("foo.o/").
+            if name.hasSuffix("/") {
+                name = String(name.dropLast())
+            }
+
+            let payload = data[dataStart..<(dataStart + dataLen)]
+
+            // Skip the archive symbol table (BSD: __.SYMDEF[ SORTED], or empty
+            // names for ranlib indexes).
+            if name == "__.SYMDEF" || name == "__.SYMDEF SORTED" || name.isEmpty || name == "/" || name == "//" {
+                // Advance past this entry (with 2-byte alignment) and continue.
+                offset = headerEnd + size
+                if size % 2 != 0 { offset += 1 }
+                continue
+            }
+
+            rawMembers.append((name: name, payload: Data(payload)))
+            nameTotals[name, default: 0] += 1
+
+            offset = headerEnd + size
+            if size % 2 != 0 { offset += 1 }
+        }
+
+        var resultNames: [String] = []
+        for member in rawMembers {
+            guard member.name.hasSuffix(".o") else { continue }
+            seenCounts[member.name, default: 0] += 1
+            let occurrence = seenCounts[member.name]!
+
+            let writeName: String
+            if (nameTotals[member.name] ?? 0) > 1 {
+                writeName = "_dup\(occurrence)_" + member.name
+            } else {
+                writeName = member.name
+            }
+            let writePath = outputDir + "/" + writeName
+            try member.payload.write(to: URL(fileURLWithPath: writePath))
+            resultNames.append(writeName)
+        }
+        return resultNames
     }
 }
