@@ -158,7 +158,12 @@ class CRCArchive {
             }
 
             rawMembers.append((name: name, payload: Data(payload)))
-            nameTotals[name, default: 0] += 1
+            // macOS filesystems (APFS by default) are case-insensitive, so
+            // members like `Resize.o` and `resize.o` would clobber each
+            // other on disk even though the archive treats them as distinct.
+            // Track collisions case-insensitively so the rename logic below
+            // catches them too.
+            nameTotals[name.lowercased(), default: 0] += 1
 
             offset = headerEnd + size
             if size % 2 != 0 { offset += 1 }
@@ -167,11 +172,12 @@ class CRCArchive {
         var resultNames: [String] = []
         for member in rawMembers {
             guard member.name.hasSuffix(".o") else { continue }
-            seenCounts[member.name, default: 0] += 1
-            let occurrence = seenCounts[member.name]!
+            let key = member.name.lowercased()
+            seenCounts[key, default: 0] += 1
+            let occurrence = seenCounts[key]!
 
             let writeName: String
-            if (nameTotals[member.name] ?? 0) > 1 {
+            if (nameTotals[key] ?? 0) > 1 {
                 writeName = "_dup\(occurrence)_" + member.name
             } else {
                 writeName = member.name
