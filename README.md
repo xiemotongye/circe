@@ -1,26 +1,28 @@
 # Circe
 
-将 arm64 iOS 预编译二进制（静态库 `.a`、静态/动态 `.framework`、IPA）转换为 arm64 iOS Simulator 可用格式。
+[中文](README_zh.md)
 
-适用于第三方 SDK 只提供真机 slice、无法在模拟器上编译/链接的场景。
+Convert pre-built arm64 iOS binaries (static libraries `.a`, static/dynamic `.framework`, IPA) to arm64 iOS Simulator format.
 
-## 原理
+Useful when third-party SDKs ship only device slices and cannot be compiled or linked for the simulator.
 
-Circe 修改 Mach-O 文件中的 `LC_BUILD_VERSION` load command，将 platform 从 `iOS (2)` 改为 `iOS Simulator (7)`，使链接器接受该二进制用于模拟器构建。对于静态库（`.a`），会解包所有 `.o` 成员逐一转换后重新打包。
+## How it works
 
-## 命令行用法
+Circe rewrites the `LC_BUILD_VERSION` load command in Mach-O files, changing the platform from `iOS (2)` to `iOS Simulator (7)` so the linker accepts the binary for simulator builds. For static archives (`.a`), it unpacks all `.o` members, converts each one, and repackages them.
+
+## CLI usage
 
 ```bash
-# 转换静态库
+# Convert a static archive
 Circe input.a output.a
 
-# 转换 IPA 目录（in-place）
+# Convert an IPA directory (in-place)
 Circe path/to/ipa_directory
 ```
 
-## Bazel 集成
+## Bazel integration
 
-通过 bzlmod 引入：
+Add via bzlmod:
 
 ```python
 # MODULE.bazel
@@ -29,7 +31,7 @@ bazel_dep(name = "circe", version = "0.0.12")
 
 ### arm2sim_archive
 
-替代 `cc_import`，转换单个 `.a` 文件：
+Drop-in replacement for `cc_import`, converts a single `.a` file:
 
 ```python
 load("@circe//:arm2sim.bzl", "arm2sim_archive")
@@ -42,7 +44,7 @@ arm2sim_archive(
 
 ### arm2sim_static_framework_import
 
-替代 `apple_static_framework_import`：
+Drop-in replacement for `apple_static_framework_import`:
 
 ```python
 load("@circe//:arm2sim.bzl", "arm2sim_static_framework_import")
@@ -56,7 +58,7 @@ arm2sim_static_framework_import(
 
 ### arm2sim_dynamic_framework_import
 
-替代 `apple_dynamic_framework_import`：
+Drop-in replacement for `apple_dynamic_framework_import`:
 
 ```python
 load("@circe//:arm2sim.bzl", "arm2sim_dynamic_framework_import")
@@ -69,7 +71,7 @@ arm2sim_dynamic_framework_import(
 
 ### arm2sim_objc_import
 
-替代 `objc_import`：
+Drop-in replacement for `objc_import`:
 
 ```python
 load("@circe//:arm2sim.bzl", "arm2sim_objc_import")
@@ -83,25 +85,25 @@ arm2sim_objc_import(
 )
 ```
 
-### 行为
+### Behavior
 
-所有 rule/macro 自动检测目标平台：
+All rules/macros automatically detect the target platform:
 
-- **arm64 模拟器** — 通过 Circe 转换二进制
-- **真机或其他** — 直接透传，零开销
+- **arm64 simulator** — binary is converted through Circe
+- **device or other** — passed through unchanged, zero overhead
 
-下游使用方不需要写 `select()`，直接 `deps` 即可。
+Downstream targets just use `deps` — no `select()` needed.
 
-## 处理细节
+## Implementation details
 
-- Fat binary 自动 `lipo -thin arm64`
-- 大型静态库（数千 .o）分批调用 `ar` 避免 ARG_MAX 溢出
-- 重名 `.o` 成员（如模板库的多 bit-depth 实例化）通过自定义 ar 解析保留
-- APFS case-insensitive 冲突检测
-- AppleDouble 元数据文件 (`._*`) 自动过滤
-- 转换后 ad-hoc 重签名（archive 内部 `.o` 跳过签名以避免 fork 风暴）
+- Fat binaries are automatically thinned via `lipo -thin arm64`
+- Large archives (thousands of `.o` members) are batched to avoid ARG_MAX overflow
+- Duplicate `.o` member names (e.g. template instantiations across bit depths) are preserved via custom ar parsing
+- APFS case-insensitive collision detection
+- AppleDouble metadata files (`._*`) are automatically filtered
+- Ad-hoc re-signing after conversion (individual `.o` inside archives skip signing to avoid fork storms)
 
-## 构建
+## Build
 
 ```bash
 bazel build //Circe:_binary
