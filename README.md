@@ -1,92 +1,108 @@
 # Circe
 
-Transfer arm64 iOS to arm64-sim binary.
+将 arm64 iOS 预编译二进制（静态库 `.a`、静态/动态 `.framework`、IPA）转换为 arm64 iOS Simulator 可用格式。
 
-## Getting started
+适用于第三方 SDK 只提供真机 slice、无法在模拟器上编译/链接的场景。
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## 原理
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+Circe 修改 Mach-O 文件中的 `LC_BUILD_VERSION` load command，将 platform 从 `iOS (2)` 改为 `iOS Simulator (7)`，使链接器接受该二进制用于模拟器构建。对于静态库（`.a`），会解包所有 `.o` 成员逐一转换后重新打包。
 
-## Add your files
+## 命令行用法
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+```bash
+# 转换静态库
+Circe input.a output.a
 
-```
-cd existing_repo
-git remote add origin https://git.bilibili.co/app-public/Morrigan.git
-git branch -M main
-git push -uf origin main
+# 转换 IPA 目录（in-place）
+Circe path/to/ipa_directory
 ```
 
-## Integrate with your tools
+## Bazel 集成
 
-- [ ] [Set up project integrations](https://git.bilibili.co/app-public/Morrigan/-/settings/integrations)
+通过 bzlmod 引入：
 
-## Collaborate with your team
+```python
+# MODULE.bazel
+bazel_dep(name = "circe", version = "0.0.12")
+```
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Automatically merge when pipeline succeeds](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+### arm2sim_archive
 
-## Test and Deploy
+替代 `cc_import`，转换单个 `.a` 文件：
 
-Use the built-in continuous integration in GitLab.
+```python
+load("@circe//:arm2sim.bzl", "arm2sim_archive")
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+arm2sim_archive(
+    name = "some_lib",
+    archive = "libfoo.a",
+)
+```
 
-***
+### arm2sim_static_framework_import
 
-# Editing this README
+替代 `apple_static_framework_import`：
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!).  Thank you to [makeareadme.com](https://www.makeareadme.com/) for this template.
+```python
+load("@circe//:arm2sim.bzl", "arm2sim_static_framework_import")
 
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+arm2sim_static_framework_import(
+    name = "SomeSDK",
+    framework_imports = glob(["SomeSDK.framework/**"]),
+    sdk_frameworks = ["UIKit", "CoreMedia"],
+)
+```
 
-## Name
-Choose a self-explaining name for your project.
+### arm2sim_dynamic_framework_import
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+替代 `apple_dynamic_framework_import`：
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+```python
+load("@circe//:arm2sim.bzl", "arm2sim_dynamic_framework_import")
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+arm2sim_dynamic_framework_import(
+    name = "SomeSDK",
+    framework_imports = glob(["SomeSDK.framework/**"]),
+)
+```
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+### arm2sim_objc_import
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+替代 `objc_import`：
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+```python
+load("@circe//:arm2sim.bzl", "arm2sim_objc_import")
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+arm2sim_objc_import(
+    name = "some_lib",
+    hdrs = glob(["include/**/*.h"]),
+    archives = glob(["lib/**/*.a"]),
+    includes = ["include"],
+    deps = ["@other_dep//:lib"],
+)
+```
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### 行为
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+所有 rule/macro 自动检测目标平台：
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+- **arm64 模拟器** — 通过 Circe 转换二进制
+- **真机或其他** — 直接透传，零开销
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+下游使用方不需要写 `select()`，直接 `deps` 即可。
 
-## License
-For open source projects, say how it is licensed.
+## 处理细节
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+- Fat binary 自动 `lipo -thin arm64`
+- 大型静态库（数千 .o）分批调用 `ar` 避免 ARG_MAX 溢出
+- 重名 `.o` 成员（如模板库的多 bit-depth 实例化）通过自定义 ar 解析保留
+- APFS case-insensitive 冲突检测
+- AppleDouble 元数据文件 (`._*`) 自动过滤
+- 转换后 ad-hoc 重签名（archive 内部 `.o` 跳过签名以避免 fork 风暴）
+
+## 构建
+
+```bash
+bazel build //Circe:_binary
+```
