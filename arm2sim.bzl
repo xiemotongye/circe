@@ -107,13 +107,7 @@ def _arm2sim_framework_impl(ctx):
                 progress_message = "Converting %s to arm64-simulator" % src.short_path,
             )
         else:
-            ctx.actions.run_shell(
-                command = "cp \"$1\" \"$2\"",
-                arguments = [src.path, out.path],
-                inputs = [src],
-                outputs = [out],
-                mnemonic = "Arm2SimCopy",
-            )
+            ctx.actions.symlink(output = out, target_file = src)
 
         outputs.append(out)
 
