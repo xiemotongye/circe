@@ -103,6 +103,10 @@ arm2sim_objc_import(
 - AppleDouble 元数据文件 (`._*`) 自动过滤
 - 转换后 ad-hoc 重签名（archive 内部 `.o` 跳过签名以避免 fork 风暴）
 
+## 为什么叫 "Circe"？
+
+Circe（喀耳刻）是希腊神话中擅长变形术的女巫。篡改 Mach-O load command、骗过链接器让真机二进制在模拟器上跑——这种事在 iOS 圈子里一般被称为黑魔法，用女巫的名字恰如其分。
+
 ## 构建
 
 ```bash

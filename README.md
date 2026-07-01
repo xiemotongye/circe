@@ -103,6 +103,10 @@ Downstream targets just use `deps` — no `select()` needed.
 - AppleDouble metadata files (`._*`) are automatically filtered
 - Ad-hoc re-signing after conversion (individual `.o` inside archives skip signing to avoid fork storms)
 
+## Why "Circe"?
+
+In Greek mythology, Circe is the sorceress who transforms men into beasts. Rewriting Mach-O load commands to trick the linker into accepting device binaries on the simulator is the kind of dark magic that earns the name.
+
 ## Build
 
 ```bash
