@@ -26,7 +26,7 @@ Circe path/to/ipa_directory
 
 ```python
 # MODULE.bazel
-bazel_dep(name = "circe", version = "0.0.12")
+bazel_dep(name = "circe", version = "1.0.0")
 ```
 
 ### arm2sim_archive
