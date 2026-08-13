@@ -110,5 +110,5 @@ In Greek mythology, Circe is the sorceress who transforms men into beasts. Rewri
 ## Build
 
 ```bash
-bazel build //Circe:_binary
+bazel build //Circe:Circe
 ```

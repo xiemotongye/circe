@@ -1,5 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_library")
+load("@build_bazel_rules_apple//apple/internal:apple_universal_binary.bzl", "apple_universal_binary")
 
 swift_library(
     name = "circe_library",
@@ -9,4 +10,11 @@ swift_library(
 swift_binary(
     name = "_binary",
     deps = [":circe_library"],
+)
+
+apple_universal_binary(
+    name = "Circe",
+    binary = ":_binary",
+    minimum_os_version = "12",
+    platform_type = "macos",
 )

@@ -110,5 +110,5 @@ Circe（喀耳刻）是希腊神话中擅长变形术的女巫。篡改 Mach-O l
 ## 构建
 
 ```bash
-bazel build //Circe:_binary
+bazel build //Circe:Circe
 ```
