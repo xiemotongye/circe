@@ -107,6 +107,10 @@ arm2sim_objc_import(
 
 Circe（喀耳刻）是希腊神话中擅长变形术的女巫。篡改 Mach-O load command、骗过链接器让真机二进制在模拟器上跑——这种事在 iOS 圈子里一般被称为黑魔法，用女巫的名字恰如其分。
 
+## 致谢
+
+核心的 Mach-O 篡改思路参考自 [arm64-to-sim](https://bogo.wtf/arm64-to-sim.html)。Circe 在此基础上做了 Bazel 化集成，提供在 build graph 中转换预编译真机二进制的 rule。
+
 ## 构建
 
 ```bash

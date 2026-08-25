@@ -107,6 +107,10 @@ Downstream targets just use `deps` — no `select()` needed.
 
 In Greek mythology, Circe is the sorceress who transforms men into beasts. Rewriting Mach-O load commands to trick the linker into accepting device binaries on the simulator is the kind of dark magic that earns the name.
 
+## Acknowledgements
+
+The core Mach-O patching technique is inspired by [arm64-to-sim](https://bogo.wtf/arm64-to-sim.html). Circe builds on that idea and integrates it into Bazel, with rules that convert prebuilt device binaries as part of the build graph.
+
 ## Build
 
 ```bash
