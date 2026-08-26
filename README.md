@@ -26,7 +26,7 @@ Add via bzlmod:
 
 ```python
 # MODULE.bazel
-bazel_dep(name = "circe", version = "1.0.0")
+bazel_dep(name = "circe", version = "1.0.1")
 ```
 
 ### arm2sim_archive
