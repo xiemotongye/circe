@@ -101,6 +101,10 @@ arm2sim_objc_import(
 - 重名 `.o` 成员（如模板库的多 bit-depth 实例化）通过自定义 ar 解析保留
 - APFS case-insensitive 冲突检测
 - AppleDouble 元数据文件 (`._*`) 自动过滤
+- 模拟器 framework 转换时，根目录文件会与二进制转换、签名放在同一个 action
+  中复制为真实文件（Xcode 27 不接受 symlink 的 `Info.plist`）；其他文件仍以低 I/O
+  symlink 透传；输入的真机 `_CodeSignature` 会丢弃，因为转换后原 seal 已失效；
+  下游 Apple processor 将 symlink 文件实体化并生成最终 seal
 - 转换后 ad-hoc 重签名（archive 内部 `.o` 跳过签名以避免 fork 风暴）
 
 ## 为什么叫 "Circe"？

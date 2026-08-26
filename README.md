@@ -101,6 +101,12 @@ Downstream targets just use `deps` — no `select()` needed.
 - Duplicate `.o` member names (e.g. template instantiations across bit depths) are preserved via custom ar parsing
 - APFS case-insensitive collision detection
 - AppleDouble metadata files (`._*`) are automatically filtered
+- During simulator framework conversion, files at each framework root are copied
+  in the same action as binary conversion and signing (Xcode 27 rejects a
+  symlinked `Info.plist`); other files remain low-I/O symlinks, and the imported
+  device `_CodeSignature` is omitted because conversion invalidates it; the
+  downstream Apple processor materializes the symlinked files and creates the
+  final seal
 - Ad-hoc re-signing after conversion (individual `.o` inside archives skip signing to avoid fork storms)
 
 ## Why "Circe"?
